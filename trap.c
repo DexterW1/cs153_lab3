@@ -79,12 +79,12 @@ trap(struct trapframe *tf)
     break;
   case T_PGFLT: ;
     uint fault_address = rcr2(); //used to check the faulting virtual address 
-    cprintf("KERNBASE: %p | KERNBASE - 1 : %p\n",KERNBASE,KERNBASE-1);
+    //cprintf("KERNBASE: %p | KERNBASE - 1 : %p\n",KERNBASE,KERNBASE-1);
     if(fault_address > KERNBASE-1){
       exit();
     }
     fault_address= PGROUNDDOWN(fault_address);
-    cprintf("Page address: %p |Page address + 1 : %p\n",fault_address,fault_address+PGSIZE);
+    //cprintf("Page address: %p |Page address + 1 : %p\n",fault_address,fault_address+PGSIZE);
     if(allocuvm(myproc()->pgdir,fault_address,fault_address+PGSIZE)==0){
       exit();
     }
