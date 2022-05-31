@@ -90,6 +90,7 @@ trap(struct trapframe *tf)
     }
     myproc()->page_count++;
     //cprintf("Increased page size, Current number of pages allocated: %d\n", myproc()->page_count);
+    cprintf("Increased stack size\n");
     break;
 
   //PAGEBREAK: 13
