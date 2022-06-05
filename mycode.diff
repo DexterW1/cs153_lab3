@@ -1,0 +1,248 @@
+diff --git a/Makefile b/Makefile
+index 2d2b9e4..be8a246 100644
+--- a/Makefile
++++ b/Makefile
+@@ -177,6 +177,8 @@ UPROGS=\
+ 	_zombie\
+ 	_shm_cnt\
+ 	_null\
++	_lab3_test\
++	_lab3\
+ 
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+diff --git a/exec.c b/exec.c
+index b40134f..580b9f3 100644
+--- a/exec.c
++++ b/exec.c
+@@ -63,11 +63,11 @@ exec(char *path, char **argv)
+   // Allocate two pages at the next page boundary.
+   // Make the first inaccessible.  Use the second as the user stack.
+   sz = PGROUNDUP(sz);
+-  if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
++  sp=KERNBASE;
++  if((allocuvm(pgdir, sp-PGSIZE, sp-1)) == 0)
+     goto bad;
+-  clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
+-  sp = sz;
+-
++  
++  curproc->page_count=1;
+   // Push argument strings, prepare rest of stack in ustack.
+   for(argc = 0; argv[argc]; argc++) {
+     if(argc >= MAXARG)
+diff --git a/lab3.c b/lab3.c
+new file mode 100644
+index 0000000..fd696c3
+--- /dev/null
++++ b/lab3.c
+@@ -0,0 +1,9 @@
++#include "types.h"
++#include "stat.h"
++#include "user.h"
++
++int main (int argc, char* argv[]) {
++    int v = argc;
++    printf(1, "%p\n", &v);
++    exit();
++}
+\ No newline at end of file
+diff --git a/lab3_test.c b/lab3_test.c
+new file mode 100644
+index 0000000..55d74f3
+--- /dev/null
++++ b/lab3_test.c
+@@ -0,0 +1,31 @@
++#include "types.h"
++#include "user.h"
++
++// Prevent this function from being optimized, which might give it closed form
++#pragma GCC push_options
++#pragma GCC optimize ("O0")
++static int
++recurse(int n)
++{
++  if(n == 0)
++    return 0;
++  return n + recurse(n - 1);
++}
++#pragma GCC pop_options
++
++int
++main(int argc, char *argv[])
++{
++  int n, m;
++
++  if(argc != 2){
++    printf(1, "Usage: %s levels\n", argv[0]);
++    exit();
++  }
++
++  n = atoi(argv[1]);
++  printf(1, "Lab 3: Recursing %d levels\n", n);
++  m = recurse(n);
++  printf(1, "Lab 3: Yielded a value of %d\n", m);
++  exit();
++}
+\ No newline at end of file
+diff --git a/proc.c b/proc.c
+index 806b1b1..bbf6034 100644
+--- a/proc.c
++++ b/proc.c
+@@ -199,6 +199,7 @@ fork(void)
+   np->sz = curproc->sz;
+   np->parent = curproc;
+   *np->tf = *curproc->tf;
++  np->page_count = curproc->page_count;
+ 
+   // Clear %eax so that fork returns 0 in the child.
+   np->tf->eax = 0;
+diff --git a/proc.h b/proc.h
+index 1647114..7f153e5 100644
+--- a/proc.h
++++ b/proc.h
+@@ -49,6 +49,7 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
++  int page_count;
+ };
+ 
+ // Process memory is laid out contiguously, low addresses first:
+diff --git a/syscall.c b/syscall.c
+index 94ef3c9..196754b 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -17,9 +17,9 @@
+ int
+ fetchint(uint addr, int *ip)
+ {
+-  struct proc *curproc = myproc();
++  //struct proc *curproc = myproc();
+ 
+-  if(addr >= curproc->sz || addr+4 > curproc->sz)
++  if(addr >= (KERNBASE) || addr+4 > (KERNBASE))
+     return -1;
+   *ip = *(int*)(addr);
+   return 0;
+@@ -32,12 +32,12 @@ int
+ fetchstr(uint addr, char **pp)
+ {
+   char *s, *ep;
+-  struct proc *curproc = myproc();
++  //struct proc *curproc = myproc();
+ 
+-  if(addr >= curproc->sz)
++  if(addr >= (KERNBASE))
+     return -1;
+   *pp = (char*)addr;
+-  ep = (char*)curproc->sz;
++  ep = (char*)(KERNBASE);
+   for(s = *pp; s < ep; s++){
+     if(*s == 0)
+       return s - *pp;
+@@ -59,11 +59,11 @@ int
+ argptr(int n, char **pp, int size)
+ {
+   int i;
+-  struct proc *curproc = myproc();
++ // struct proc *curproc = myproc();
+  
+   if(argint(n, &i) < 0)
+     return -1;
+-  if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz)
++  if(size < 0 || (uint)i >= (KERNBASE) || (uint)i+size > (KERNBASE))
+     return -1;
+   *pp = (char*)i;
+   return 0;
+diff --git a/trap.c b/trap.c
+index 41c66eb..f9418f0 100644
+--- a/trap.c
++++ b/trap.c
+@@ -77,6 +77,25 @@ trap(struct trapframe *tf)
+             cpuid(), tf->cs, tf->eip);
+     lapiceoi();
+     break;
++  case T_PGFLT: ;
++    uint fault_address = rcr2(); //used to check the faulting virtual address 
++    if(fault_address > KERNBASE-1){ //check to see if the fault address is trying to access the above the kernbase
++      exit();
++    }
++    if(fault_address < ((KERNBASE-(myproc()->page_count)*PGSIZE)) && fault_address > (KERNBASE-(myproc()->page_count+1)*PGSIZE)){  //check to see if the fault_address is trying to access the pageguard.
++      fault_address=PGROUNDDOWN(fault_address); //round down to get accessable page
++      if(allocuvm(myproc()->pgdir,fault_address,fault_address+PGSIZE)==0){
++        exit();
++      }
++      else{
++        myproc()->page_count++;
++        cprintf("Increased stack size\n");
++      }
++    }
++    else{
++      exit();
++    }
++    break;
+ 
+   //PAGEBREAK: 13
+   default:
+diff --git a/vm.c b/vm.c
+index f623aa3..1139290 100644
+--- a/vm.c
++++ b/vm.c
+@@ -224,10 +224,18 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
+   char *mem;
+   uint a;
+ 
+-  if(newsz >= KERNBASE)
++  uint upper_bound = KERNBASE + (2*PGSIZE);
++
++  if(newsz > upper_bound) {
+     return 0;
+-  if(newsz < oldsz)
++  } else if (newsz < oldsz) {
+     return oldsz;
++  }
++
++  // if(newsz >= KERNBASE)
++  //   return 0;
++  // if(newsz < oldsz)
++  //   return oldsz;
+ 
+   a = PGROUNDUP(oldsz);
+   for(; a < newsz; a += PGSIZE){
+@@ -318,8 +326,10 @@ copyuvm(pde_t *pgdir, uint sz)
+   pde_t *d;
+   pte_t *pte;
+   uint pa, i, flags;
++  uint t = (KERNBASE-PGSIZE);
++  
+   char *mem;
+-
++  struct proc *curproc = myproc();
+   if((d = setupkvm()) == 0)
+     return 0;
+   for(i = 0; i < sz; i += PGSIZE){
+@@ -335,8 +345,22 @@ copyuvm(pde_t *pgdir, uint sz)
+     if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
+       goto bad;
+   }
+-  return d;
+ 
++  for(i = t; i> t-(curproc->page_count)*PGSIZE; i-=PGSIZE){
++    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
++      panic("copyuvm: pte should exist");
++    if(!(*pte & PTE_P))
++      panic("copyuvm: page not present");
++    pa = PTE_ADDR(*pte);
++    flags = PTE_FLAGS(*pte);
++    if((mem = kalloc()) == 0)
++      goto bad;
++    memmove(mem, (char*)P2V(pa), PGSIZE);
++    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
++      goto bad;
++  }
++
++  return d;
+ bad:
+   freevm(d);
+   return 0;
