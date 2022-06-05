@@ -223,9 +223,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
 {
   char *mem;
   uint a;
-
-  uint upper_bound = KERNBASE + (2*PGSIZE); 
-
+  
   // removed bound checking since newsz will be valid
 
   a = PGROUNDUP(oldsz);
