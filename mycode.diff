@@ -85,6 +85,9 @@ index 0000000..55d74f3
 +  exit();
 +}
 \ No newline at end of file
+diff --git a/mycode.diff b/mycode.diff
+new file mode 100644
+index 0000000..e69de29
 diff --git a/proc.c b/proc.c
 index 806b1b1..bbf6034 100644
 --- a/proc.c
@@ -110,7 +113,7 @@ index 1647114..7f153e5 100644
  
  // Process memory is laid out contiguously, low addresses first:
 diff --git a/syscall.c b/syscall.c
-index 94ef3c9..196754b 100644
+index 94ef3c9..1e43e0b 100644
 --- a/syscall.c
 +++ b/syscall.c
 @@ -17,9 +17,9 @@
@@ -121,7 +124,7 @@ index 94ef3c9..196754b 100644
 +  //struct proc *curproc = myproc();
  
 -  if(addr >= curproc->sz || addr+4 > curproc->sz)
-+  if(addr >= (KERNBASE) || addr+4 > (KERNBASE))
++  if(addr >= (KERNBASE-1) || addr+4 > (KERNBASE-1))
      return -1;
    *ip = *(int*)(addr);
    return 0;
@@ -133,11 +136,11 @@ index 94ef3c9..196754b 100644
 +  //struct proc *curproc = myproc();
  
 -  if(addr >= curproc->sz)
-+  if(addr >= (KERNBASE))
++  if(addr >= (KERNBASE-1))
      return -1;
    *pp = (char*)addr;
 -  ep = (char*)curproc->sz;
-+  ep = (char*)(KERNBASE);
++  ep = (char*)(KERNBASE-1);
    for(s = *pp; s < ep; s++){
      if(*s == 0)
        return s - *pp;
@@ -151,7 +154,7 @@ index 94ef3c9..196754b 100644
    if(argint(n, &i) < 0)
      return -1;
 -  if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz)
-+  if(size < 0 || (uint)i >= (KERNBASE) || (uint)i+size > (KERNBASE))
++  if(size < 0 || (uint)i >= (KERNBASE-1) || (uint)i+size > (KERNBASE-1))
      return -1;
    *pp = (char*)i;
    return 0;
@@ -186,31 +189,24 @@ index 41c66eb..f9418f0 100644
    //PAGEBREAK: 13
    default:
 diff --git a/vm.c b/vm.c
-index f623aa3..1139290 100644
+index f623aa3..0c4bfa4 100644
 --- a/vm.c
 +++ b/vm.c
-@@ -224,10 +224,18 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
+@@ -224,10 +224,9 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
    char *mem;
    uint a;
  
 -  if(newsz >= KERNBASE)
-+  uint upper_bound = KERNBASE + (2*PGSIZE);
-+
-+  if(newsz > upper_bound) {
-     return 0;
+-    return 0;
 -  if(newsz < oldsz)
-+  } else if (newsz < oldsz) {
-     return oldsz;
-+  }
+-    return oldsz;
++  uint upper_bound = KERNBASE + (2*PGSIZE); 
 +
-+  // if(newsz >= KERNBASE)
-+  //   return 0;
-+  // if(newsz < oldsz)
-+  //   return oldsz;
++  // removed bound checking since newsz will be valid
  
    a = PGROUNDUP(oldsz);
    for(; a < newsz; a += PGSIZE){
-@@ -318,8 +326,10 @@ copyuvm(pde_t *pgdir, uint sz)
+@@ -318,8 +317,10 @@ copyuvm(pde_t *pgdir, uint sz)
    pde_t *d;
    pte_t *pte;
    uint pa, i, flags;
@@ -222,7 +218,7 @@ index f623aa3..1139290 100644
    if((d = setupkvm()) == 0)
      return 0;
    for(i = 0; i < sz; i += PGSIZE){
-@@ -335,8 +345,22 @@ copyuvm(pde_t *pgdir, uint sz)
+@@ -335,8 +336,22 @@ copyuvm(pde_t *pgdir, uint sz)
      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
        goto bad;
    }
