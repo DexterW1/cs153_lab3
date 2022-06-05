@@ -79,18 +79,22 @@ trap(struct trapframe *tf)
     break;
   case T_PGFLT: ;
     uint fault_address = rcr2(); //used to check the faulting virtual address 
-    //cprintf("KERNBASE: %p | KERNBASE - 1 : %p\n",KERNBASE,KERNBASE-1);
-    if(fault_address > KERNBASE-1){
+    if(fault_address > KERNBASE-1){ //check to see if the fault address is trying to access the above the kernbase
       exit();
     }
-    fault_address= PGROUNDDOWN(fault_address);
-    //cprintf("Page address: %p |Page address + 1 : %p\n",fault_address,fault_address+PGSIZE);
-    if(allocuvm(myproc()->pgdir,fault_address,fault_address+PGSIZE)==0){
+    if(fault_address < ((KERNBASE-(myproc()->page_count)*PGSIZE)) && fault_address > (KERNBASE-(myproc()->page_count+1)*PGSIZE)){  //check to see if the fault_address is trying to access the pageguard.
+      fault_address=PGROUNDDOWN(fault_address); //round down to get accessable page
+      if(allocuvm(myproc()->pgdir,fault_address,fault_address+PGSIZE)==0){
+        exit();
+      }
+      else{
+        myproc()->page_count++;
+        cprintf("Increased stack size\n");
+      }
+    }
+    else{
       exit();
     }
-    myproc()->page_count++;
-    //cprintf("Increased page size, Current number of pages allocated: %d\n", myproc()->page_count);
-    cprintf("Increased stack size\n");
     break;
 
   //PAGEBREAK: 13

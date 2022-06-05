@@ -63,8 +63,8 @@ exec(char *path, char **argv)
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   sz = PGROUNDUP(sz);
-  sp=KERNBASE-1;
-  if((allocuvm(pgdir, sp-PGSIZE, sp)) == 0)
+  sp=KERNBASE;
+  if((allocuvm(pgdir, sp-PGSIZE, sp-1)) == 0)
     goto bad;
   
   curproc->page_count=1;
